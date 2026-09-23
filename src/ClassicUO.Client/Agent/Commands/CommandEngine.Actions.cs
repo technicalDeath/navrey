@@ -10,6 +10,7 @@ using ClassicUO.Game;
 using ClassicUO.Game.Data;
 using ClassicUO.Game.GameObjects;
 using ClassicUO.Game.Managers;
+using ClassicUO.Game.Scenes;
 using ClassicUO.Game.UI.Gumps;
 using ClassicUO.Network;
 
@@ -36,6 +37,51 @@ namespace ClassicUO.Agent
         private void RegisterCore()
         {
             Register("help", "help", "List all commands", Help, "?", "h");
+
+            Register("createcharacter", "createcharacter <name>", "Create a human character on an empty account", ctx =>
+            {
+                string name = ctx.Arg(0);
+
+                if (string.IsNullOrWhiteSpace(name) || name.Length > 30 || name.Any(char.IsControl))
+                {
+                    ctx.Warn("usage: createcharacter <name up to 30 characters>");
+                    return;
+                }
+
+                ctx.Print(ctx.Game(world =>
+                {
+                    var login = Client.Game.GetScene<LoginScene>();
+
+                    if (login?.CurrentLoginStep is not (LoginSteps.CharacterSelection or LoginSteps.CharacterCreation))
+                    {
+                        return "Character creation is available only at the character-selection or creation screen.";
+                    }
+
+                    if (login.Characters?.Any(existing => !string.IsNullOrWhiteSpace(existing)) == true)
+                    {
+                        return "This account already has a character; select it instead of creating another.";
+                    }
+
+                    var character = new PlayerMobile(world, 1)
+                    {
+                        Name = name,
+                        Race = RaceType.HUMAN,
+                        Hue = 0x0835,
+                        Strength = 30,
+                        Dexterity = 30,
+                        Intelligence = 20
+                    };
+
+                    character.Skills[0].ValueFixed = 50;
+                    character.Skills[1].ValueFixed = 50;
+
+                    // This follows the normal client creation path, using the first valid start
+                    // city and the standard profession packet. The server remains authoritative
+                    // for account limits, access level, starting equipment, and final placement.
+                    login.CreateCharacter(character, cityIndex: 0, profession: 0);
+                    return $"Requested creation of '{name}'.";
+                }));
+            }, "createchar");
 
             Register("pos", "pos", "Player X, Y, Z, direction and map", ctx =>
             {
