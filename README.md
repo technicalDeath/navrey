@@ -102,6 +102,10 @@ Push-Location .\Navrey
 & "$env:DOTNET_ROOT\dotnet.exe" .\bin\Debug\net10.0\cuo.dll -agent
 ```
 
+The repository also includes `Start Navrey.cmd` for a normal Windows double-click. It finds the
+workspace SDK (then `%USERPROFILE%\\.dotnet`, then `PATH`) and launches the DLL through `dotnet`,
+so the framework-dependent apphost does not fail before the client can initialize its agent files.
+
 For a no-window diagnostic session, add `-headless`; use separate `-cmdfile`, `-logfile`,
 `-statefile`, and `-worldfile` paths when another Navrey client is running. The CLI is launched
 the same way with `cli\bin\Debug\net10.0\navrey.dll`.

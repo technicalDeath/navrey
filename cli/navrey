@@ -58,8 +58,21 @@ fi
 dotnet_bin="$HOME/.dotnet/dotnet"
 [ -x "$dotnet_bin" ] || dotnet_bin="$(command -v dotnet)"
 
-cmdfile="${CUO_CMD_FILE:-/tmp/cuocmd}"
-logfile="${CUO_LOG_FILE:-/tmp/cuolog}"
+if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* || "${OS:-}" == Windows_NT ]]; then
+    # The agent daemon creates these files itself.  Keep the Windows default in a
+    # per-user temp directory; /tmp maps to C:\\tmp under MSYS and is not guaranteed
+    # to exist (which otherwise becomes an unhandled DirectoryNotFoundException).
+    windows_temp="${TEMP:-${TMP:-}}"
+    if [ -n "$windows_temp" ] && command -v cygpath >/dev/null 2>&1; then
+        windows_temp="$(cygpath -u "$windows_temp")"
+    fi
+    windows_temp="${windows_temp:-/tmp}/Navrey"
+    cmdfile="${CUO_CMD_FILE:-$windows_temp/cuocmd}"
+    logfile="${CUO_LOG_FILE:-$windows_temp/cuolog}"
+else
+    cmdfile="${CUO_CMD_FILE:-/tmp/cuocmd}"
+    logfile="${CUO_LOG_FILE:-/tmp/cuolog}"
+fi
 
 client_running() {
     local pidfile="$cmdfile.pid"
