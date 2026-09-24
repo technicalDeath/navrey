@@ -90,6 +90,22 @@ missing, the client starts at the login screen and you log in by hand.
 cli/navrey
 ```
 
+On Windows installations that do not have .NET 10 registered system-wide, do not double-click
+the generated `cuo.exe` or `navrey.exe` apphosts: they are framework-dependent and can show a
+generic application-error dialog. From the workspace root, launch through the bundled SDK and
+keep `Navrey/` as the working directory so `settings.json` and `.env` are found:
+
+```powershell
+$env:DOTNET_ROOT = "$PWD\dotnet"
+$env:PATH = "$env:DOTNET_ROOT;$env:PATH"
+Push-Location .\Navrey
+& "$env:DOTNET_ROOT\dotnet.exe" .\bin\Debug\net10.0\cuo.dll -agent
+```
+
+For a no-window diagnostic session, add `-headless`; use separate `-cmdfile`, `-logfile`,
+`-statefile`, and `-worldfile` paths when another Navrey client is running. The CLI is launched
+the same way with `cli\bin\Debug\net10.0\navrey.dll`.
+
 `cli/navrey` starts the client, logs in, and gives you a `navrey>` prompt. Variants:
 
 ```bash
