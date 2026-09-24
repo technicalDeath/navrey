@@ -36,6 +36,8 @@ namespace ClassicUO.Agent
 
             try
             {
+                AgentPaths.EnsureParentDirectory(path);
+
                 if (File.Exists(path) &&
                     int.TryParse(File.ReadAllText(path).Trim(), out int existing) &&
                     existing != Environment.ProcessId &&

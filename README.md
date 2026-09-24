@@ -98,6 +98,12 @@ cli/navrey --attach          # reconnect the prompt to a client that is already 
 cli/navrey --no-autologin    # stop at the login screen
 ```
 
+On Windows, the agent's default command, log, state, and world files live under
+`%LOCALAPPDATA%\Temp\Navrey` so a stale or locked `C:\tmp` file cannot prevent startup. On Unix,
+the historical `/tmp/cuocmd` and related paths remain the defaults. You can override the command
+and log paths with `--cmdfile`/`--logfile` when attaching the CLI to a client started with matching
+`-cmdfile`/`-logfile` arguments.
+
 The client keeps running when you leave the prompt. Running `cli/navrey` again attaches to it
 rather than starting a second client. `show` and `hide` at the prompt bring the game window up or
 put it away without disconnecting.

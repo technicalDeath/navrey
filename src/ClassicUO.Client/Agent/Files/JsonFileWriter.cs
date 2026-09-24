@@ -73,6 +73,7 @@ namespace ClassicUO.Agent
         {
             Path = path;
             _label = label;
+            AgentPaths.EnsureParentDirectory(path);
             _running = true;
 
             _thread = new Thread(WriterLoop)

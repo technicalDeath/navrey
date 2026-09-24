@@ -17,8 +17,15 @@ namespace Navrey.Cli
 {
     internal static class Program
     {
-        private const string DEFAULT_COMMAND_FILE = "/tmp/cuocmd";
-        private const string DEFAULT_LOG_FILE = "/tmp/cuolog";
+        private static readonly string DEFAULT_RUNTIME_DIRECTORY = OperatingSystem.IsWindows()
+            ? Path.Combine(Path.GetTempPath(), "Navrey")
+            : "/tmp";
+
+        private static readonly string DEFAULT_COMMAND_FILE =
+            Path.Combine(DEFAULT_RUNTIME_DIRECTORY, "cuocmd");
+
+        private static readonly string DEFAULT_LOG_FILE =
+            Path.Combine(DEFAULT_RUNTIME_DIRECTORY, "cuolog");
 
         private static string _commandFile = DEFAULT_COMMAND_FILE;
         private static string _logFile = DEFAULT_LOG_FILE;

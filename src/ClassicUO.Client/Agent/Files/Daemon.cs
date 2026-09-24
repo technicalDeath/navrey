@@ -16,8 +16,8 @@ namespace ClassicUO.Agent
     /// </summary>
     internal sealed class Daemon : IDisposable
     {
-        public const string DEFAULT_COMMAND_FILE = "/tmp/cuocmd";
-        public const string DEFAULT_LOG_FILE = "/tmp/cuolog";
+        public static string DEFAULT_COMMAND_FILE => AgentPaths.CommandFile;
+        public static string DEFAULT_LOG_FILE => AgentPaths.LogFile;
 
         /// <summary>
         /// How often the command file is checked for new lines. This is the dominant cost of every
@@ -40,6 +40,7 @@ namespace ClassicUO.Agent
             _commandFile = commandFile;
             _onCommand = onCommand;
 
+            AgentPaths.EnsureParentDirectory(_commandFile);
             File.WriteAllText(_commandFile, string.Empty);
             Output.OpenLogFile(logFile);
         }

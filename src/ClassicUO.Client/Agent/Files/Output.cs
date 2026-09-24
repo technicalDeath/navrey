@@ -36,6 +36,7 @@ namespace ClassicUO.Agent
         {
             lock (_lock)
             {
+                AgentPaths.EnsureParentDirectory(path);
                 _file?.Dispose();
                 _file = new StreamWriter(path, append: false) { AutoFlush = true };
             }

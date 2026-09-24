@@ -34,7 +34,7 @@ namespace ClassicUO.Agent
     /// </summary>
     internal static class StateFile
     {
-        public const string DEFAULT_STATE_FILE = "/tmp/cuostate.json";
+        public static string DEFAULT_STATE_FILE => AgentPaths.StateFile;
 
         private static readonly object _lock = new();
 

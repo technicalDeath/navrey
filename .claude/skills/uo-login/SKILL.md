@@ -8,8 +8,11 @@ description: Start the ClassicUO client with its CLI agent, log in, and confirm 
 There is one process and one connection. The ClassicUO client owns both; the CLI is a thin front
 end that talks to it through two files:
 
-- Commands go in: `/tmp/cuocmd` (append a line)
-- Output streams to: `/tmp/cuolog`
+- Commands go in the client-selected command file (append a line).
+- Output streams to the matching log file. On Unix the defaults are `/tmp/cuocmd` and `/tmp/cuolog`;
+  on Windows Navrey uses `%LOCALAPPDATA%\Temp\Navrey\cuocmd` and `cuolog` so a locked `C:\tmp`
+  file cannot crash startup. Prefer `cli/navrey` (or its `--cmdfile`/`--logfile` options) so the
+  paths always match the running client.
 
 Append commands with `echo`/`printf` — much faster than shelling out to `cli/navrey <cmd>`,
 which spawns a fresh .NET process per call (50-100ms). Read the reply back out of `/tmp/cuolog`,

@@ -33,7 +33,7 @@ namespace ClassicUO.Agent
     /// </summary>
     internal static class WorldFile
     {
-        public const string DEFAULT_WORLD_FILE = "/tmp/cuoworld.json";
+        public static string DEFAULT_WORLD_FILE => AgentPaths.WorldFile;
 
         /// <summary>Matches the `mobiles` and `items` commands' own default.</summary>
         private const int RANGE_TILES = 18;
