@@ -10,6 +10,7 @@ using ClassicUO.Game;
 using ClassicUO.Game.Data;
 using ClassicUO.Game.GameObjects;
 using ClassicUO.Game.Managers;
+using ClassicUO.Network;
 
 namespace ClassicUO.Agent
 {
@@ -113,6 +114,16 @@ namespace ClassicUO.Agent
             using (var json = new Utf8JsonWriter(_buffer))
             {
                 json.WriteStartObject();
+
+                // The client's game loop (and this snapshot with it) keeps running on its own clock
+                // whether or not the socket is still alive, so updatedAtMs freshness alone cannot
+                // tell a live connection from a dead one - a session whose server restarted looks
+                // exactly like a healthy, idle one, replaying its last-known state forever with a
+                // continuously fresh timestamp. IsConnected reflects the last send/receive rather
+                // than being probed live, but the network pump reads every frame regardless of
+                // player activity, so a real disconnect surfaces here within a frame or two either
+                // way - not just when a command happens to be in flight.
+                json.WriteBoolean("connected", NetClient.Socket.IsConnected);
 
                 if (world?.InGame == true && world.Player != null)
                 {

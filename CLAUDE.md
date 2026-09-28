@@ -105,6 +105,15 @@ Writes land via a rename, so a reader never sees a half-written document and nev
 saying `inGame: true` may belong to a client that is gone. Compare the timestamp to now before
 trusting it.
 
+**`connected` catches the case `updatedAtMs` cannot: a live client whose server connection died.**
+The game loop (and this snapshot with it) runs on the client's own clock regardless of socket
+state, so a session whose server restarted keeps writing a fresh `updatedAtMs` — and often a still
+`inGame: true` — forever, replaying its last-known state. `connected` is `NetClient.Socket.IsConnected`
+read every frame; it reflects the last send/receive rather than an active probe, but the network
+pump reads every frame regardless of player activity, so a real disconnect shows up here within a
+frame or two either way. Check it after anything that might have restarted the server out from
+under a session you didn't just start, before trusting the rest of the document.
+
 Commands remain the way to *do* things, and to read what the file does not carry: nearby mobiles,
 container contents, vendor stock, line of sight.
 
