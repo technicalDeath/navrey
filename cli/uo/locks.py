@@ -26,11 +26,11 @@ refuse up front, because the alternative failure is a mystery.
         print(exc)          # "autoheal is already running (pid 4821)"
         return 1
 
-flock, not a pid file. The lock lives on an open file descriptor, so the kernel drops it when the
+An OS file lock, not a pid file. The lock lives on an open file descriptor, so the kernel drops it when the
 process ends - including on `kill -9`, a crash, or a terminal that went away. There is no stale
 lock to detect, no liveness check to get wrong, and no window where a script refuses to start
 because its predecessor died badly. The pid written into the file body is for the error message
-only; the flock is the truth.
+only; the OS lock is the truth. Unix uses flock; Windows uses a nonblocking byte-range lock.
 
 The file is never unlinked. Deleting a locked file races - another process can be holding the same
 path open, and the next acquirer would lock an unlinked inode that nobody else can see. A leftover
@@ -43,14 +43,25 @@ scripts.
 from __future__ import annotations
 
 import errno
-import fcntl
 import glob
 import os
 import signal
 import time
 from typing import Dict, Optional
 
-DEFAULT_CMD = "/tmp/cuocmd"
+try:
+    from .paths import DEFAULT_CMD
+except ImportError:  # run directly as `python cli/uo/locks.py`
+    from paths import DEFAULT_CMD
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
+
+# Windows locks deny reads of the locked bytes too. Keep the PID metadata readable
+# by locking beyond its header; byte-range locks may extend past end-of-file.
+_LOCK_OFFSET = 4096
 
 
 class AlreadyRunning(RuntimeError):
@@ -136,7 +147,8 @@ def single_instance(
     takeover=True asks the holder to stop (SIGTERM) and waits up to `wait` seconds for its lock to
     drop, which is the "restart the healer" case: relaunching is what the caller meant, and making
     them find the pid first is friction with no safety in it. It still refuses to evict a process
-    it cannot signal.
+    it cannot signal. Windows takeover is refused: os.kill(SIGTERM) there terminates
+    without the cleanup semantics expected by the script runtime. Stop that exact script first.
     """
     path = lock_path(name, cmd_file)
 
@@ -239,14 +251,14 @@ def _probe(path: str) -> "tuple[bool, Optional[int]]":
         return True, os.getpid()
 
     try:
-        fd = os.open(path, os.O_RDONLY)
+        fd = os.open(path, os.O_RDWR if os.name == "nt" else os.O_RDONLY)
     except OSError:
         return False, None
 
     try:
         if _try_lock(fd):
             # Nobody held it. Release at once - this was a probe, not a claim.
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            _unlock(fd)
             return False, None
 
         return True, _read_pid(fd)
@@ -256,12 +268,24 @@ def _probe(path: str) -> "tuple[bool, Optional[int]]":
 
 def _try_lock(fd: int) -> bool:
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if os.name == "nt":
+            os.lseek(fd, _LOCK_OFFSET, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        else:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         return True
     except OSError as exc:
         if exc.errno in (errno.EACCES, errno.EAGAIN):
             return False
         raise
+
+
+def _unlock(fd: int) -> None:
+    if os.name == "nt":
+        os.lseek(fd, _LOCK_OFFSET, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+    else:
+        fcntl.flock(fd, fcntl.LOCK_UN)
 
 
 def _read_pid(fd: int) -> Optional[int]:
@@ -275,7 +299,7 @@ def _read_pid(fd: int) -> Optional[int]:
 
 
 def _evict(name: str, pid: Optional[int], path: str) -> None:
-    if pid is None or pid == os.getpid():
+    if os.name == "nt" or pid is None or pid == os.getpid():
         raise AlreadyRunning(name, pid, path)
 
     try:

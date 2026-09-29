@@ -11,12 +11,8 @@ from .entities import Item, Mobile, Nav, Target
 from .combat import Combat, CombatWatch
 from .events import Event, LogEvent, LogTail
 from .locks import InstanceLock, single_instance
+from .paths import DEFAULT_CMD, DEFAULT_LOG, DEFAULT_STATE, DEFAULT_WORLD
 from .state import JsonFile
-
-DEFAULT_STATE = "/tmp/cuostate.json"
-DEFAULT_WORLD = "/tmp/cuoworld.json"
-DEFAULT_CMD = "/tmp/cuocmd"
-DEFAULT_LOG = "/tmp/cuolog"
 
 # Anything with a serial: a raw string, or an object carrying one.
 Serial = Union[str, int, Item, Mobile, Target]

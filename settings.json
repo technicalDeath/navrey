@@ -1,16 +1,16 @@
 {
   "username": "",
   "password": "",
-  "ip": "login.uoalive.com",
+  "ip": "127.0.0.1",
   "port": 2593,
   "ignore_relay_ip": false,
-  "uo_directory": "/Users/john/ClassicUO2/cli/uoalivedata",
-  "poi_directory": "/Users/john/ClassicUO2/cli/uoalive_poi",
+  "uo_directory": "C:\\Users\\brend\\Documents\\Britannia Renaissance\\UOData",
+  "poi_directory": "",
   "profiles_path": "",
-  "client_version": "7.0.114.2",
-  "lang": "IVL",
+  "client_version": "7.0.117.0",
+  "lang": "ENU",
   "last_server_num": 1,
-  "last_server_name": "UOAlive",
+  "last_server_name": "Britannia Renaissance",
   "fps": 60,
   "screen_scale": 1,
   "window_position": {
@@ -34,8 +34,6 @@
   "use_verdata": false,
   "maps_layouts": null,
   "encryption": 0,
-  "plugins": [
-    "./Assistant/Razor.dll"
-  ],
+  "plugins": [],
   "files_override": null
 }
