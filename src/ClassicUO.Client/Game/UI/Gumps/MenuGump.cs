@@ -11,6 +11,7 @@ namespace ClassicUO.Game.UI.Gumps
 {
     internal class MenuGump : Gump
     {
+        internal LegacyMenuOptions Options { get; }
         private readonly ContainerHorizontal _container;
         private bool _isDown,
             _isLeft;
@@ -18,6 +19,7 @@ namespace ClassicUO.Game.UI.Gumps
 
         public MenuGump(World world, uint serial, uint serv, string name) : base(world, serial, serv)
         {
+            Options = new LegacyMenuOptions(name);
             CanMove = true;
             AcceptMouseInput = true;
             CanCloseWithRightClick = true;
@@ -104,6 +106,7 @@ namespace ClassicUO.Game.UI.Gumps
 
         public void AddItem(ushort graphic, ushort hue, string name, int x, int y, int index)
         {
+            Options.Add(index, graphic, hue, name);
             var view = new ItemView(graphic, hue)
             {
                 X = x,
@@ -112,14 +115,7 @@ namespace ClassicUO.Game.UI.Gumps
 
             view.MouseDoubleClick += (sender, e) =>
             {
-                NetClient.Socket.Send_MenuResponse(
-                    LocalSerial,
-                    (ushort)ServerSerial,
-                    index,
-                    graphic,
-                    hue
-                );
-                Dispose();
+                Respond(index);
                 e.Result = true;
             };
 
@@ -131,11 +127,19 @@ namespace ClassicUO.Game.UI.Gumps
             _slider.MaxValue = _container.MaxValue;
         }
 
+        internal bool Respond(int index)
+        {
+            if (IsDisposed || !Options.Respond(index, (choice, graphic, hue) =>
+                    NetClient.Socket.Send_MenuResponse(LocalSerial, (ushort)ServerSerial, choice, graphic, hue)))
+                return false;
+            Dispose();
+            return true;
+        }
+
         protected override void CloseWithRightClick()
         {
+            Respond(0);
             base.CloseWithRightClick();
-
-            NetClient.Socket.Send_MenuResponse(LocalSerial, (ushort)ServerSerial, 0, 0, 0);
         }
 
         class ItemView : Control
@@ -270,10 +274,12 @@ namespace ClassicUO.Game.UI.Gumps
 
     internal class GrayMenuGump : Gump
     {
+        internal LegacyMenuOptions Options { get; }
         private readonly ResizePic _resizePic;
 
         public GrayMenuGump(World world, uint local, uint serv, string name) : base(world, local, serv)
         {
+            Options = new LegacyMenuOptions(name);
             CanMove = true;
             AcceptMouseInput = true;
             CanCloseWithRightClick = false;
@@ -298,6 +304,7 @@ namespace ClassicUO.Game.UI.Gumps
 
         public int AddItem(string name, int y)
         {
+            Options.Add(Options.Entries.Count + 1, 0, 0, name);
             RadioButton radio = new RadioButton(0, 0x138A, 0x138B, name, 1, 0x0386, false, 330)
             {
                 X = 50,
@@ -309,14 +316,21 @@ namespace ClassicUO.Game.UI.Gumps
             return radio.Height;
         }
 
+        internal bool Respond(int index)
+        {
+            if (IsDisposed || !Options.Respond(index, (choice, _, _) =>
+                    NetClient.Socket.Send_GrayMenuResponse(LocalSerial, (ushort)ServerSerial, (ushort)choice)))
+                return false;
+            Dispose();
+            return true;
+        }
+
         public override void OnButtonClick(int buttonID)
         {
             switch (buttonID)
             {
                 case 0: // cancel
-                    NetClient.Socket.Send_GrayMenuResponse(LocalSerial, (ushort)ServerSerial, 0);
-
-                    Dispose();
+                    Respond(0);
 
                     break;
 
@@ -328,13 +342,7 @@ namespace ClassicUO.Game.UI.Gumps
                     {
                         if (radioButton.IsChecked)
                         {
-                            NetClient.Socket.Send_GrayMenuResponse(
-                                LocalSerial,
-                                (ushort)ServerSerial,
-                                index
-                            );
-
-                            Dispose();
+                            Respond(index);
                             break;
                         }
 

@@ -38,13 +38,33 @@ namespace ClassicUO.Agent
         {
             Register("help", "help", "List all commands", Help, "?", "h");
 
-            Register("createcharacter", "createcharacter <name>", "Create a human character on an empty account", ctx =>
+            Register("createcharacter", "createcharacter <name> [profession 0-3 [skill1 skill2]]", "Create a human character on an empty account", ctx =>
             {
                 string name = ctx.Arg(0);
 
-                if (string.IsNullOrWhiteSpace(name) || name.Length > 30 || name.Any(char.IsControl))
+                if (string.IsNullOrWhiteSpace(name) || name.Length > 30 || name.Any(char.IsControl) ||
+                    ctx.ArgCount is not (1 or 2 or 4))
                 {
-                    ctx.Warn("usage: createcharacter <name up to 30 characters>");
+                    ctx.Warn("usage: createcharacter <name up to 30 characters> [profession 0-3 [skill1 skill2]]");
+                    return;
+                }
+
+                byte profession = 0;
+                if (ctx.ArgCount >= 2 && (!byte.TryParse(ctx.Arg(1), out profession) || profession > 3))
+                {
+                    ctx.Warn("profession must be 0 (Advanced), 1 (Warrior), 2 (Mage), or 3 (Blacksmith)");
+                    return;
+                }
+
+                int firstSkill = 0;
+                int secondSkill = 1;
+                if (ctx.ArgCount == 4 &&
+                    (profession != 0 || !int.TryParse(ctx.Arg(2), out firstSkill) ||
+                     !int.TryParse(ctx.Arg(3), out secondSkill) ||
+                     firstSkill < 0 || firstSkill > 48 || secondSkill < 0 || secondSkill > 48 ||
+                     firstSkill == secondSkill))
+                {
+                    ctx.Warn("Advanced creation requires two different UOR skill IDs from 0 to 48");
                     return;
                 }
 
@@ -72,13 +92,13 @@ namespace ClassicUO.Agent
                         Intelligence = 20
                     };
 
-                    character.Skills[0].ValueFixed = 50;
-                    character.Skills[1].ValueFixed = 50;
+                    character.Skills[firstSkill].ValueFixed = 50;
+                    character.Skills[secondSkill].ValueFixed = 50;
 
                     // This follows the normal client creation path, using the first valid start
                     // city and the standard profession packet. The server remains authoritative
                     // for account limits, access level, starting equipment, and final placement.
-                    login.CreateCharacter(character, cityIndex: 0, profession: 0);
+                    login.CreateCharacter(character, cityIndex: 0, profession);
                     return $"Requested creation of '{name}'.";
                 }));
             }, "createchar");
@@ -444,12 +464,14 @@ namespace ClassicUO.Agent
                 ctx.Print($"Reading 0x{serial:X8} - pages follow as [BOOK] lines");
             });
 
-            Register("attack", "attack <serial>", "Attack a mobile", ctx =>
+            Register("attack", "attack <serial> [force]", "Attack a mobile ('force' also attacks a blue; for PvP rule testing)", ctx =>
             {
                 if (!ctx.RequireInGame() || !TrySerial(ctx, 0, out uint serial))
                 {
                     return;
                 }
+
+                bool force = string.Equals(ctx.Arg(1), "force", StringComparison.OrdinalIgnoreCase);
 
                 string refusal = ctx.Game(w =>
                 {
@@ -462,12 +484,20 @@ namespace ClassicUO.Agent
 
                     // Attacking a blue (Innocent) is a criminal act that flags you grey; the old
                     // CLI refused it and there is no reason to make that easier from a script.
-                    if (mobile.NotorietyFlag == NotorietyFlag.Innocent)
+                    if (mobile.NotorietyFlag == NotorietyFlag.Innocent && !force)
                     {
                         return $"{DescribeMobile(w, mobile)} is Innocent (blue) - refusing";
                     }
 
-                    GameActions.Attack(w, serial);
+                    if (force)
+                    {
+                        // Skip the client's criminal-action confirmation gump; the server rules are what is under test.
+                        NetClient.Socket.Send_AttackRequest(serial);
+                    }
+                    else
+                    {
+                        GameActions.Attack(w, serial);
+                    }
 
                     return null;
                 });
@@ -1087,11 +1117,11 @@ namespace ClassicUO.Agent
 
                 string error = ctx.Game(_ =>
                 {
-                    var open = UIManager.Gumps.OfType<Gump>().Where(g => g.ServerSerial != 0 && !g.IsDisposed).ToList();
+                    var open = UIManager.Gumps.OfType<Gump>().Where(g => g.ServerSerial != 0 && !g.IsDisposed && MenuOptions(g) == null).ToList();
 
                     if (open.Count == 0)
                     {
-                        return "no server gump open";
+                        return "no standard server gump open; legacy menus use menus / menuresponse";
                     }
 
                     Gump gump;

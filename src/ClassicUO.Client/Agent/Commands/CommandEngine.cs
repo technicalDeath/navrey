@@ -30,6 +30,7 @@ namespace ClassicUO.Agent
             RegisterPoi();
             RegisterActions();
             RegisterExtras();
+            RegisterLegacyMenus();
         }
 
         private void Register(string name, string usage, string help, Action<CommandContext> run, params string[] aliases)
