@@ -829,6 +829,77 @@ namespace ClassicUO.Agent
                 ctx.Print($"Used skill {name} (index {index}) - if it needs a target, answer the cursor with `target <serial>`");
             }, "skill");
 
+            // Toggle a skill's up/down/locked arrow, the way the skills gump's arrow click does.
+            // "Down" makes a skill eligible to be lowered by the 700-point cap's displacement roll;
+            // "up" is the default and is required before the server will restore a banked balance.
+            Register("skilllock", "skilllock <name|index> <up|down|locked>", "Set a skill's lock state", ctx =>
+            {
+                if (!ctx.RequireInGame())
+                {
+                    return;
+                }
+
+                if (ctx.ArgCount < 2)
+                {
+                    ctx.Warn("Usage: skilllock <name|index> <up|down|locked>");
+                    return;
+                }
+
+                string state = ctx.Args[^1].Trim();
+                string query = string.Join(" ", ctx.Args.Skip(1).Take(ctx.ArgCount - 1)).Trim();
+
+                Lock lockState = state.ToLowerInvariant() switch
+                {
+                    "up" => Lock.Up,
+                    "down" or "dn" => Lock.Down,
+                    "locked" or "lock" => Lock.Locked,
+                    _ => (Lock)255
+                };
+
+                if ((byte)lockState == 255)
+                {
+                    ctx.Warn("Usage: skilllock <name|index> <up|down|locked>");
+                    return;
+                }
+
+                (int index, string name, string error) = ctx.Game<(int, string, string)>(w =>
+                {
+                    if (int.TryParse(query, out int idx))
+                    {
+                        var byIndex = w.Player.Skills.FirstOrDefault(s => s.Index == idx);
+                        return byIndex != null ? (byIndex.Index, byIndex.Name, null) : (-1, null, $"No skill with index {idx}");
+                    }
+
+                    var exact = w.Player.Skills.FirstOrDefault(s => string.Equals(s.Name, query, StringComparison.OrdinalIgnoreCase));
+                    if (exact != null)
+                    {
+                        return (exact.Index, exact.Name, null);
+                    }
+
+                    var prefix = w.Player.Skills.Where(s => s.Name.StartsWith(query, StringComparison.OrdinalIgnoreCase)).ToList();
+                    if (prefix.Count == 1)
+                    {
+                        return (prefix[0].Index, prefix[0].Name, null);
+                    }
+
+                    if (prefix.Count > 1)
+                    {
+                        return (-1, null, $"'{query}' matches {string.Join(", ", prefix.Select(s => s.Name))} - be more specific");
+                    }
+
+                    return (-1, null, $"No skill named '{query}' - `skills` lists them");
+                });
+
+                if (error != null)
+                {
+                    ctx.Warn(error);
+                    return;
+                }
+
+                ctx.Game(_ => GameActions.ChangeSkillLockStatus((ushort)index, (byte)lockState));
+                ctx.Print($"Set {name} (index {index}) lock to {lockState}");
+            });
+
             // Cast by name across every spell school the client knows (magery 1-64, necromancy
             // 101+, chivalry 201+, bushido 401+, ninjitsu 501+, spellweaving 601+, mysticism
             // 678+, mastery 701+), or by that full index. The server decides whether it works -
