@@ -12,6 +12,7 @@ using ClassicUO.Game.GameObjects;
 using ClassicUO.Game.Managers;
 using ClassicUO.Game.Scenes;
 using ClassicUO.Game.UI.Gumps;
+using ClassicUO.Game.UI.Gumps.CharCreation;
 using ClassicUO.Network;
 
 namespace ClassicUO.Agent
@@ -38,19 +39,74 @@ namespace ClassicUO.Agent
         {
             Register("help", "help", "List all commands", Help, "?", "h");
 
-            Register("createcharacter", "createcharacter <name> [profession 0-3 [skill1 skill2]]", "Create a human character on an empty account", ctx =>
+            Register("createcharacter", "createcharacter <name> [profession 0-3 [skill1 skill2]] [elf|human|gargoyle] [female] [hue=N] [hair=N] [hairhue=N] [beard=N] [beardhue=N]", "Create a character on an empty account (human unless a race is given)", ctx =>
             {
-                string name = ctx.Arg(0);
+                // Options are recognised by shape so the positional form keeps working unchanged.
+                var positional = new List<string>();
+                var race = RaceType.HUMAN;
+                bool female = false;
+                ushort hue = 0x0835;
+                ushort hair = 0, hairHue = 0, beard = 0, beardHue = 0;
+
+                for (int i = 0; i < ctx.ArgCount; i++)
+                {
+                    string token = ctx.Arg(i);
+                    string lower = token.ToLowerInvariant();
+
+                    switch (lower)
+                    {
+                        case "human": race = RaceType.HUMAN; continue;
+                        case "elf": race = RaceType.ELF; continue;
+                        case "gargoyle": race = RaceType.GARGOYLE; continue;
+                        case "female": female = true; continue;
+                        case "male": female = false; continue;
+                    }
+
+                    int eq = i > 0 ? lower.IndexOf('=') : -1;
+
+                    if (eq <= 0)
+                    {
+                        positional.Add(token);
+                        continue;
+                    }
+
+                    string key = lower.Substring(0, eq);
+                    string text = lower.Substring(eq + 1);
+                    ushort value;
+                    bool parsed = text.StartsWith("0x")
+                        ? ushort.TryParse(text.Substring(2), System.Globalization.NumberStyles.HexNumber, null, out value)
+                        : ushort.TryParse(text, out value);
+
+                    if (!parsed)
+                    {
+                        ctx.Warn($"{key} needs a number 0-65535 (decimal or 0x hex)");
+                        return;
+                    }
+
+                    switch (key)
+                    {
+                        case "hue": hue = value; break;
+                        case "hair": hair = value; break;
+                        case "hairhue": hairHue = value; break;
+                        case "beard": beard = value; break;
+                        case "beardhue": beardHue = value; break;
+                        default:
+                            ctx.Warn($"unknown option '{key}'");
+                            return;
+                    }
+                }
+
+                string name = positional.Count > 0 ? positional[0] : null;
 
                 if (string.IsNullOrWhiteSpace(name) || name.Length > 30 || name.Any(char.IsControl) ||
-                    ctx.ArgCount is not (1 or 2 or 4))
+                    positional.Count is not (1 or 2 or 4))
                 {
-                    ctx.Warn("usage: createcharacter <name up to 30 characters> [profession 0-3 [skill1 skill2]]");
+                    ctx.Warn("usage: createcharacter <name up to 30 characters> [profession 0-3 [skill1 skill2]] [elf|human|gargoyle] [female] [hue=N] [hair=N] [hairhue=N] [beard=N] [beardhue=N]");
                     return;
                 }
 
                 byte profession = 0;
-                if (ctx.ArgCount >= 2 && (!byte.TryParse(ctx.Arg(1), out profession) || profession > 3))
+                if (positional.Count >= 2 && (!byte.TryParse(positional[1], out profession) || profession > 3))
                 {
                     ctx.Warn("profession must be 0 (Advanced), 1 (Warrior), 2 (Mage), or 3 (Blacksmith)");
                     return;
@@ -58,9 +114,9 @@ namespace ClassicUO.Agent
 
                 int firstSkill = 0;
                 int secondSkill = 1;
-                if (ctx.ArgCount == 4 &&
-                    (profession != 0 || !int.TryParse(ctx.Arg(2), out firstSkill) ||
-                     !int.TryParse(ctx.Arg(3), out secondSkill) ||
+                if (positional.Count == 4 &&
+                    (profession != 0 || !int.TryParse(positional[2], out firstSkill) ||
+                     !int.TryParse(positional[3], out secondSkill) ||
                      firstSkill < 0 || firstSkill > 48 || secondSkill < 0 || secondSkill > 48 ||
                      firstSkill == secondSkill))
                 {
@@ -85,12 +141,39 @@ namespace ClassicUO.Agent
                     var character = new PlayerMobile(world, 1)
                     {
                         Name = name,
-                        Race = RaceType.HUMAN,
-                        Hue = 0x0835,
+                        Race = race,
+                        Hue = hue,
                         Strength = 30,
                         Dexterity = 30,
                         Intelligence = 20
                     };
+
+                    if (female)
+                    {
+                        character.IsFemale = true;
+                        character.Flags |= Flags.Female;
+                    }
+
+                    // The packet writer reads hair and beard from the character's layers, exactly
+                    // as the creation gump fills them (serials in the 0x4000_0000 block).
+                    void AddLayerItem(Layer layer, ushort graphic, ushort itemHue)
+                    {
+                        if (graphic == 0)
+                        {
+                            return;
+                        }
+
+                        Item item = world.GetOrCreateItem(0x4000_0000 + (uint) layer);
+                        character.Remove(item);
+                        item.Graphic = graphic;
+                        item.Hue = itemHue;
+                        item.Layer = layer;
+                        item.Container = character;
+                        character.PushToBack(item);
+                    }
+
+                    AddLayerItem(Layer.Hair, hair, hairHue);
+                    AddLayerItem(Layer.Beard, beard, beardHue);
 
                     character.Skills[firstSkill].ValueFixed = 50;
                     character.Skills[secondSkill].ValueFixed = 50;
@@ -99,9 +182,43 @@ namespace ClassicUO.Agent
                     // city and the standard profession packet. The server remains authoritative
                     // for account limits, access level, starting equipment, and final placement.
                     login.CreateCharacter(character, cityIndex: 0, profession);
-                    return $"Requested creation of '{name}'.";
+                    return $"Requested creation of '{name}' ({race}{(female ? ", female" : "")}).";
                 }));
             }, "createchar");
+
+            Register("charraces", "charraces", "Race buttons the character-creation screen offers (opens the screen from character selection)", ctx =>
+            {
+                string Probe() => ctx.Game(world =>
+                {
+                    var appearance = UIManager.GetGump<CharCreationGump>()?.Children.OfType<CreateCharAppearanceGump>().FirstOrDefault();
+
+                    return appearance?.DescribeRaceOptions();
+                });
+
+                string result = Probe();
+
+                if (result == null)
+                {
+                    bool opened = ctx.Game(world =>
+                    {
+                        var login = Client.Game.GetScene<LoginScene>();
+                        login?.StartCharCreation();
+
+                        return login?.CurrentLoginStep == LoginSteps.CharacterCreation;
+                    });
+
+                    if (!opened)
+                    {
+                        ctx.Warn("Open the character-creation screen from character selection first.");
+                        return;
+                    }
+
+                    System.Threading.Thread.Sleep(1000);
+                    result = Probe();
+                }
+
+                ctx.Print(result ?? "The character-creation screen did not open.");
+            });
 
             Register("pos", "pos", "Player X, Y, Z, direction and map", ctx =>
             {

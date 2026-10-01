@@ -158,25 +158,29 @@ namespace ClassicUO.Game.UI.Gumps.CharCreation
                 1
             );
 
-            Add
-            (
-                _elfRadio = new Button((int)Buttons.ElfButton, 0x0768, 0x0767, 0x0768)
-                {
-                    X = 180, Y = 455, ButtonAction = ButtonAction.Activate
-                },
-                1
-            );
+            if ((World.ClientFeatures.Flags & CharacterListFlags.CLF_ELVEN_RACE) != 0)
+            {
+                Add
+                (
+                    _elfRadio = new Button((int)Buttons.ElfButton, 0x0768, 0x0767, 0x0768)
+                    {
+                        X = 180, Y = 455, ButtonAction = ButtonAction.Activate
+                    },
+                    1
+                );
 
-            Add
-            (
-                new Button((int) Buttons.ElfButton, 0x0705, 0x0707, 0x0706)
-                {
-                    X = 200, Y = 455, ButtonAction = ButtonAction.Activate
-                },
-                1
-            );
+                Add
+                (
+                    new Button((int) Buttons.ElfButton, 0x0705, 0x0707, 0x0706)
+                    {
+                        X = 200, Y = 455, ButtonAction = ButtonAction.Activate
+                    },
+                    1
+                );
+            }
 
-            if (Client.Game.UO.Version >= ClientVersion.CV_60144)
+            if (Client.Game.UO.Version >= ClientVersion.CV_60144
+                && World.ClientLockedFeatures.Flags.HasFlag(LockedFeatureFlags.SA))
             {
                 Add
                 (
@@ -369,7 +373,7 @@ namespace ClassicUO.Game.UI.Gumps.CharCreation
             CharacterListFlags flags = World.ClientFeatures.Flags;
             LockedFeatureFlags locks = World.ClientLockedFeatures.Flags;
 
-            bool allowElf = (flags & CharacterListFlags.CLF_ELVEN_RACE) != 0 && locks.HasFlag(LockedFeatureFlags.ML);
+            bool allowElf = (flags & CharacterListFlags.CLF_ELVEN_RACE) != 0;
             bool allowGarg = locks.HasFlag(LockedFeatureFlags.SA);
 
             if (race == RaceType.ELF && !allowElf)
@@ -667,6 +671,39 @@ namespace ClassicUO.Game.UI.Gumps.CharCreation
             _paperDoll.RequestUpdate();
         }
 
+        // Agent probe: drives the same handlers a click would and reports which race buttons exist
+        // and whether Next stays enabled for each, then returns to Human.
+        internal string DescribeRaceOptions()
+        {
+            string State() => _nextButton.IsEnabled ? "next-enabled" : "next-disabled";
+
+            OnButtonClick((int) Buttons.HumanButton);
+            string result = $"human: offered, {State()}, body=0x{_character.Graphic:X}";
+
+            if (_elfRadio != null)
+            {
+                OnButtonClick((int) Buttons.ElfButton);
+                result += $"; elf: offered, {State()}, body=0x{_character.Graphic:X}";
+            }
+            else
+            {
+                result += "; elf: absent";
+            }
+
+            if (_gargoyleRadio != null)
+            {
+                OnButtonClick((int) Buttons.GargoyleButton);
+                result += $"; gargoyle: offered, {State()}, body=0x{_character.Graphic:X}";
+            }
+            else
+            {
+                result += "; gargoyle: absent";
+            }
+
+            OnButtonClick((int) Buttons.HumanButton);
+            return result;
+        }
+
         public override void OnButtonClick(int buttonID)
         {
             CharCreationGump charCreationGump = UIManager.GetGump<CharCreationGump>();
@@ -716,6 +753,11 @@ namespace ClassicUO.Game.UI.Gumps.CharCreation
 
                 case Buttons.ElfButton:
 
+                    if (_elfRadio == null)
+                    {
+                        break;
+                    }
+
                     _characterInfo.Race = RaceType.ELF;
 
                     if (!_elfRadio.IsClicked)
@@ -735,12 +777,20 @@ namespace ClassicUO.Game.UI.Gumps.CharCreation
 
                 case Buttons.GargoyleButton:
 
+                    if (_gargoyleRadio == null)
+                    {
+                        break;
+                    }
+
                     _characterInfo.Race = RaceType.GARGOYLE;
 
                     if (!_gargoyleRadio.IsClicked)
                     {
                         _gargoyleRadio.IsClicked = true;
-                        _elfRadio.IsClicked = false;
+                        if (_elfRadio != null)
+                        {
+                            _elfRadio.IsClicked = false;
+                        }
                         _humanRadio.IsClicked = false;
 
                         HandleRaceChanged();
