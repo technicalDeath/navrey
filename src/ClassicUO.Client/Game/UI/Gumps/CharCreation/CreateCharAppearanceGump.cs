@@ -229,6 +229,13 @@ namespace ClassicUO.Game.UI.Gumps.CharCreation
             HandleRaceChanged();
         }
 
+        // Agent drive: type the name and press Next, as a player would.
+        internal void DriveNext(string name)
+        {
+            _nameTextBox.SetText(name);
+            OnButtonClick((int) Buttons.Next);
+        }
+
         private void CreateCharacter(bool isFemale, RaceType race)
         {
             if (_character == null)

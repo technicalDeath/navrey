@@ -30,6 +30,11 @@
     <Folder Include="Properties\" />
   </ItemGroup>
 
+  <!-- The shard's character-creation templates, when the Britannia Renaissance workspace is the sibling checkout. -->
+  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\..\ShardContent\data\professions\Prof.txt')">
+    <None Include="$(MSBuildThisFileDirectory)..\..\..\ShardContent\data\professions\Prof.txt" Link="BritanniaRenaissance.Prof.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\external\FNA\FNA.Core.csproj" />
     <ProjectReference Include="..\ClassicUO.Assets\ClassicUO.Assets.csproj" />

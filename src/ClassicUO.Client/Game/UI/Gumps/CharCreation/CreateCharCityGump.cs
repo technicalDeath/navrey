@@ -213,6 +213,9 @@ namespace ClassicUO.Game.UI.Gumps.CharCreation
         }
 
 
+        // Agent drive: press Finish with the first start city selected, as a player would.
+        internal void DriveFinish() => OnButtonClick((int) Buttons.Finish);
+
         public override void OnButtonClick(int buttonID)
         {
             CharCreationGump charCreationGump = UIManager.GetGump<CharCreationGump>();

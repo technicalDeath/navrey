@@ -39,7 +39,7 @@ namespace ClassicUO.Agent
         {
             Register("help", "help", "List all commands", Help, "?", "h");
 
-            Register("createcharacter", "createcharacter <name> [profession 0-3 [skill1 skill2]] [elf|human|gargoyle] [female] [hue=N] [hair=N] [hairhue=N] [beard=N] [beardhue=N]", "Create a character on an empty account (human unless a race is given)", ctx =>
+            Register("createcharacter", "createcharacter <name> [profession 0-255 [skill1 skill2]] [elf|human|gargoyle] [female] [stats=S,D,I] [hue=N] [hair=N] [hairhue=N] [beard=N] [beardhue=N]", "Create a character on an empty account (human unless a race is given)", ctx =>
             {
                 // Options are recognised by shape so the positional form keeps working unchanged.
                 var positional = new List<string>();
@@ -47,6 +47,7 @@ namespace ClassicUO.Agent
                 bool female = false;
                 ushort hue = 0x0835;
                 ushort hair = 0, hairHue = 0, beard = 0, beardHue = 0;
+                byte[] stats = null;
 
                 for (int i = 0; i < ctx.ArgCount; i++)
                 {
@@ -60,6 +61,21 @@ namespace ClassicUO.Agent
                         case "gargoyle": race = RaceType.GARGOYLE; continue;
                         case "female": female = true; continue;
                         case "male": female = false; continue;
+                    }
+
+                    if (i > 0 && lower.StartsWith("stats="))
+                    {
+                        string[] parts = lower.Substring(6).Split(',');
+
+                        if (parts.Length != 3 || !parts.All(part => byte.TryParse(part, out _)))
+                        {
+                            ctx.Warn("stats needs three numbers, for example stats=40,40,40");
+                            return;
+                        }
+
+                        stats = parts.Select(byte.Parse).ToArray();
+
+                        continue;
                     }
 
                     int eq = i > 0 ? lower.IndexOf('=') : -1;
@@ -101,26 +117,30 @@ namespace ClassicUO.Agent
                 if (string.IsNullOrWhiteSpace(name) || name.Length > 30 || name.Any(char.IsControl) ||
                     positional.Count is not (1 or 2 or 4))
                 {
-                    ctx.Warn("usage: createcharacter <name up to 30 characters> [profession 0-3 [skill1 skill2]] [elf|human|gargoyle] [female] [hue=N] [hair=N] [hairhue=N] [beard=N] [beardhue=N]");
+                    ctx.Warn("usage: createcharacter <name up to 30 characters> [profession 0-255 [skill1 skill2]] [elf|human|gargoyle] [female] [hue=N] [hair=N] [hairhue=N] [beard=N] [beardhue=N]");
                     return;
                 }
 
                 byte profession = 0;
-                if (positional.Count >= 2 && (!byte.TryParse(positional[1], out profession) || profession > 3))
+                if (positional.Count >= 2 && !byte.TryParse(positional[1], out profession))
                 {
-                    ctx.Warn("profession must be 0 (Advanced), 1 (Warrior), 2 (Mage), or 3 (Blacksmith)");
+                    ctx.Warn("profession must be a number 0-255 (0 Advanced, 1 Warrior, 2 Mage, 3 Blacksmith, others as the shard defines them)");
                     return;
                 }
 
                 int firstSkill = 0;
                 int secondSkill = 1;
+                // The two skills are what Advanced creation sends. For a template the server applies its own
+                // skills, so they only matter when a template ID the shard does not define is forged on purpose;
+                // that case may name later-era skills (up to 57) to see what the server does with them.
+                int maxSkill = profession is 0 or (>= 1 and <= 3) ? 48 : 57;
                 if (positional.Count == 4 &&
-                    (profession != 0 || !int.TryParse(positional[2], out firstSkill) ||
+                    (!int.TryParse(positional[2], out firstSkill) ||
                      !int.TryParse(positional[3], out secondSkill) ||
-                     firstSkill < 0 || firstSkill > 48 || secondSkill < 0 || secondSkill > 48 ||
+                     firstSkill < 0 || firstSkill > maxSkill || secondSkill < 0 || secondSkill > maxSkill ||
                      firstSkill == secondSkill))
                 {
-                    ctx.Warn("Advanced creation requires two different UOR skill IDs from 0 to 48");
+                    ctx.Warn($"two different skill IDs from 0 to {maxSkill} are required");
                     return;
                 }
 
@@ -147,6 +167,13 @@ namespace ClassicUO.Agent
                         Dexterity = 30,
                         Intelligence = 20
                     };
+
+                    if (stats != null)
+                    {
+                        character.Strength = stats[0];
+                        character.Dexterity = stats[1];
+                        character.Intelligence = stats[2];
+                    }
 
                     if (female)
                     {
@@ -218,6 +245,124 @@ namespace ClassicUO.Agent
                 }
 
                 ctx.Print(result ?? "The character-creation screen did not open.");
+            });
+
+            Register("createui", "createui <name> <Folder/Folder/Profession | Advanced> [skillID,skillID,skillID,skillID] [stats=S,D,I]", "Create a character by driving the real creation screens: name, Next, the folders and card (or Advanced with its drop-downs and sliders), Finish", ctx =>
+            {
+                if (ctx.ArgCount < 2)
+                {
+                    ctx.Warn("usage: createui <name> <Folder/Folder/Profession | Advanced> [skillID,skillID,skillID,skillID] [stats=S,D,I]");
+                    return;
+                }
+
+                string name = ctx.Arg(0);
+                string[] path = ctx.Arg(1).Split('/');
+                int[] skillIds = null;
+                int[] stats = null;
+
+                for (int i = 2; i < ctx.ArgCount; i++)
+                {
+                    string token = ctx.Arg(i).ToLowerInvariant();
+
+                    if (token.StartsWith("stats="))
+                    {
+                        stats = token.Substring(6).Split(',').Select(int.Parse).ToArray();
+                    }
+                    else
+                    {
+                        skillIds = token.Split(',').Select(int.Parse).ToArray();
+                    }
+                }
+
+                void Pause() => System.Threading.Thread.Sleep(1200);
+
+                CharCreationGump Screens() => UIManager.GetGump<CharCreationGump>();
+
+                bool opened = ctx.Game(world =>
+                {
+                    var login = Client.Game.GetScene<LoginScene>();
+
+                    if (login?.CurrentLoginStep == LoginSteps.CharacterSelection)
+                    {
+                        login.StartCharCreation();
+                    }
+
+                    return login?.CurrentLoginStep == LoginSteps.CharacterCreation;
+                });
+
+                if (!opened)
+                {
+                    ctx.Warn("Open the character-creation screen from character selection first (an account with no character).");
+                    return;
+                }
+
+                Pause();
+
+                if (!ctx.Game(world => { var screen = Screens()?.Children.OfType<CreateCharAppearanceGump>().FirstOrDefault(); screen?.DriveNext(name); return screen != null; }))
+                {
+                    ctx.Warn("The appearance screen is not up.");
+                    return;
+                }
+
+                Pause();
+
+                foreach (string step in path)
+                {
+                    if (!ctx.Game(world => Screens()?.Children.OfType<CreateCharProfessionGump>().LastOrDefault()?.DrivePick(step) == true))
+                    {
+                        ctx.Warn($"The template screen does not offer '{step}'.");
+                        return;
+                    }
+
+                    ctx.Print($"picked {step}");
+                    Pause();
+                }
+
+                if (path[path.Length - 1].Equals("Advanced", StringComparison.OrdinalIgnoreCase))
+                {
+                    string held = ctx.Game(world =>
+                    {
+                        var screen = Screens()?.Children.OfType<CreateCharTradeGump>().LastOrDefault();
+
+                        return screen == null ? "the Advanced screen is not up" : screen.DriveAdvanced(skillIds ?? new[] { 25, 46, 16, 43 }, stats);
+                    });
+
+                    ctx.Print($"Advanced screen held: {held}");
+                    Pause();
+                }
+
+                if (!ctx.Game(world => { var screen = Screens()?.Children.OfType<CreateCharSelectionCityGump>().LastOrDefault(); screen?.DriveFinish(); return screen != null; }))
+                {
+                    ctx.Warn("The start-city screen is not up.");
+                    return;
+                }
+
+                ctx.Print($"Finished the creation screens for '{name}'.");
+            });
+
+            Register("chartemplates", "chartemplates", "Templates the character-creation screen offers (built the way the screen builds them)", ctx =>
+            {
+                ctx.Print(ctx.Game(world => new CreateCharProfessionGump(world).DescribeOffered()));
+            });
+
+            Register("charstats", "charstats", "The Advanced creation screen's stat sliders: range, starting split and whether the total holds", ctx =>
+            {
+                ctx.Print(ctx.Game(world =>
+                {
+                    var character = new PlayerMobile(world, 1) { Race = RaceType.HUMAN };
+
+                    return new CreateCharTradeGump(world, character, null).DescribeStatSliders();
+                }));
+            });
+
+            Register("charskills", "charskills", "Skills the Advanced character-creation screen offers in its drop-downs", ctx =>
+            {
+                ctx.Print(ctx.Game(world =>
+                {
+                    var character = new PlayerMobile(world, 1) { Race = RaceType.HUMAN };
+
+                    return new CreateCharTradeGump(world, character, null).DescribeSkillChoices();
+                }));
             });
 
             Register("pos", "pos", "Player X, Y, Z, direction and map", ctx =>

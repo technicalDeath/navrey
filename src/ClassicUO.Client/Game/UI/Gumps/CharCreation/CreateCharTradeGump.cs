@@ -105,9 +105,9 @@ namespace ClassicUO.Game.UI.Gumps.CharCreation
                     164,
                     196,
                     93,
-                    10,
-                    60,
-                    defStatsValues[0],
+                    CharCreationEra.AdvancedStatMinimum,
+                    CharCreationEra.AdvancedStatMaximum,
+                    CharCreationEra.AdvancedStatDefaults[0],
                     HSliderBarStyle.MetalWidgetRecessedBar,
                     true
                 )
@@ -120,9 +120,9 @@ namespace ClassicUO.Game.UI.Gumps.CharCreation
                     164,
                     276,
                     93,
-                    10,
-                    60,
-                    defStatsValues[1],
+                    CharCreationEra.AdvancedStatMinimum,
+                    CharCreationEra.AdvancedStatMaximum,
+                    CharCreationEra.AdvancedStatDefaults[1],
                     HSliderBarStyle.MetalWidgetRecessedBar,
                     true
                 )
@@ -135,9 +135,9 @@ namespace ClassicUO.Game.UI.Gumps.CharCreation
                     164,
                     356,
                     93,
-                    10,
-                    60,
-                    defStatsValues[2],
+                    CharCreationEra.AdvancedStatMinimum,
+                    CharCreationEra.AdvancedStatMaximum,
+                    CharCreationEra.AdvancedStatDefaults[2],
                     HSliderBarStyle.MetalWidgetRecessedBar,
                     true
                 )
@@ -145,39 +145,9 @@ namespace ClassicUO.Game.UI.Gumps.CharCreation
 
             var clientFlags = World.ClientLockedFeatures.Flags;
 
+            // One shared rule decides which skills and templates the creation screens offer (CharCreationEra).
             _skillList = Client.Game.UO.FileManager.Skills.SortedSkills
-                         .Where(s =>
-                                     // All standard client versions ignore these skills by defualt
-                                     //s.Index != 26 && // MagicResist
-                                     s.Index != 47 && // Stealth
-                                     s.Index != 48 && // RemoveTrap
-                                     s.Index != 54 && // Spellweaving
-                                     (character.Race == RaceType.GARGOYLE || s.Index != 57) // Throwing for gargoyle only
-                                 )
-                          .Where(s =>
-                                    clientFlags.HasFlag(LockedFeatureFlags.AOS) ||
-                                    (
-                                        s.Index != 51 && // Chivlary
-                                        s.Index != 50 && // Focus
-                                        s.Index != 49    // Necromancy
-                                    )
-                                )
-
-                          .Where(s =>
-                                    clientFlags.HasFlag(LockedFeatureFlags.SE) ||
-                                    (
-                                        s.Index != 52 && // Bushido
-                                        s.Index != 53    // Ninjitsu
-                                    )
-                                )
-
-                          .Where(s =>
-                                    clientFlags.HasFlag(LockedFeatureFlags.SA) ||
-                                    (
-                                        s.Index != 55 && // Mysticism
-                                        s.Index != 56    // Imbuing
-                                    )
-                                )
+                         .Where(s => CharCreationEra.IsAdvancedChoice(s.Index, clientFlags, character.Race))
                          .ToList();
 
             // do not include archer if it's a gargoyle
@@ -269,6 +239,56 @@ namespace ClassicUO.Game.UI.Gumps.CharCreation
                 }
             }
         }
+
+        // Agent probe: the Advanced stat sliders' range and total, and that pulling one to its limits keeps the total.
+        internal string DescribeStatSliders()
+        {
+            string State() => $"{_attributeSliders[0].Value}/{_attributeSliders[1].Value}/{_attributeSliders[2].Value} (total {_attributeSliders.Sum(s => s.Value)})";
+
+            string result = $"range {_attributeSliders[0].MinValue}-{_attributeSliders[0].MaxValue}; start {State()}";
+
+            _attributeSliders[0].Value = _attributeSliders[0].MaxValue;
+            result += $"; first slider to max: {State()}";
+
+            _attributeSliders[1].Value = _attributeSliders[1].MinValue;
+            result += $"; second slider to min: {State()}";
+
+            return result;
+        }
+
+        // Agent drive: choose each skill in its drop-down, set the stat sliders (the others follow, the total holds)
+        // and press Next. Returns what the screen holds just before Next, or why it could not be filled.
+        internal string DriveAdvanced(int[] skillIndexes, int[] stats)
+        {
+            for (int i = 0; i < _skillsCombobox.Length && i < skillIndexes.Length; i++)
+            {
+                int index = _skillList.FindIndex(s => s.Index == skillIndexes[i]);
+
+                if (index < 0)
+                {
+                    return $"skill {skillIndexes[i]} is not offered on this screen";
+                }
+
+                _skillsCombobox[i].SelectedIndex = index;
+            }
+
+            if (stats != null)
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    _attributeSliders[i].Value = stats[i];
+                }
+            }
+
+            string held = $"skills {string.Join("/", _skillsCombobox.Select((c, i) => _skillList[c.SelectedIndex].Name + " " + _skillSliders[i].Value))}; stats {_attributeSliders[0].Value}/{_attributeSliders[1].Value}/{_attributeSliders[2].Value}";
+
+            OnButtonClick((int) Buttons.Next);
+
+            return held;
+        }
+
+        // Agent probe: the skills the Advanced screen offers in its drop-downs.
+        internal string DescribeSkillChoices() => string.Join(", ", _skillList.Select(s => s.Name));
 
         public override void OnButtonClick(int buttonID)
         {
