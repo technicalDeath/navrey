@@ -857,6 +857,54 @@ namespace ClassicUO.Agent
                 ctx.Print(result ?? $"Targeted {arg}");
             });
 
+            Register("targettile", "targettile <x> <y> <z> [graphic]",
+                "Answer a ground-target cursor with a map tile (graphic 0 = land, else the static's graphic)", ctx =>
+            {
+                if (!ctx.RequireInGame())
+                {
+                    return;
+                }
+
+                if (!ushort.TryParse(ctx.Arg(0), out ushort x) || !ushort.TryParse(ctx.Arg(1), out ushort y) ||
+                    !short.TryParse(ctx.Arg(2), out short z))
+                {
+                    ctx.Warn("usage: targettile <x> <y> <z> [graphic]");
+
+                    return;
+                }
+
+                ushort graphic = 0;
+                string graphicArg = ctx.Arg(3);
+
+                if (!string.IsNullOrWhiteSpace(graphicArg))
+                {
+                    bool parsed = graphicArg.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                        ? ushort.TryParse(graphicArg.AsSpan(2), System.Globalization.NumberStyles.HexNumber, null, out graphic)
+                        : ushort.TryParse(graphicArg, out graphic);
+
+                    if (!parsed)
+                    {
+                        ctx.Warn($"could not parse graphic '{graphicArg}'");
+
+                        return;
+                    }
+                }
+
+                string result = ctx.Game(w =>
+                {
+                    if (!w.TargetManager.IsTargeting)
+                    {
+                        return "nothing is asking for a target";
+                    }
+
+                    w.TargetManager.Target(graphic, x, y, z);
+
+                    return null;
+                });
+
+                ctx.Print(result ?? $"Targeted tile {x},{y},{z} graphic {graphic}");
+            });
+
             Register("canceltarget", "canceltarget", "Cancel a pending target cursor", ctx =>
             {
                 ctx.Game(w => w.TargetManager.CancelTarget());
