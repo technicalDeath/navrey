@@ -39,7 +39,7 @@ namespace ClassicUO.Agent
         {
             Register("help", "help", "List all commands", Help, "?", "h");
 
-            Register("createcharacter", "createcharacter <name> [profession 0-255 [skill1 skill2]] [elf|human|gargoyle] [female] [stats=S,D,I] [hue=N] [hair=N] [hairhue=N] [beard=N] [beardhue=N]", "Create a character on an empty account (human unless a race is given)", ctx =>
+            Register("createcharacter", "createcharacter <name> [profession 0-255 [skill1 skill2]] [elf|human|gargoyle] [female] [stats=S,D,I] [hue=N] [hair=N] [hairhue=N] [beard=N] [beardhue=N] [city=N]", "Create a character on an empty account (human unless a race is given; city=N sends that start-city index, to test the server)", ctx =>
             {
                 // Options are recognised by shape so the positional form keeps working unchanged.
                 var positional = new List<string>();
@@ -48,6 +48,7 @@ namespace ClassicUO.Agent
                 ushort hue = 0x0835;
                 ushort hair = 0, hairHue = 0, beard = 0, beardHue = 0;
                 byte[] stats = null;
+                int cityIndex = 0;
 
                 for (int i = 0; i < ctx.ArgCount; i++)
                 {
@@ -106,6 +107,7 @@ namespace ClassicUO.Agent
                         case "hairhue": hairHue = value; break;
                         case "beard": beard = value; break;
                         case "beardhue": beardHue = value; break;
+                        case "city": cityIndex = value; break;
                         default:
                             ctx.Warn($"unknown option '{key}'");
                             return;
@@ -208,7 +210,7 @@ namespace ClassicUO.Agent
                     // This follows the normal client creation path, using the first valid start
                     // city and the standard profession packet. The server remains authoritative
                     // for account limits, access level, starting equipment, and final placement.
-                    login.CreateCharacter(character, cityIndex: 0, profession);
+                    login.CreateCharacter(character, cityIndex, profession);
                     return $"Requested creation of '{name}' ({race}{(female ? ", female" : "")}).";
                 }));
             }, "createchar");
