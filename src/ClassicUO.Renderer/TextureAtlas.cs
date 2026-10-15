@@ -27,6 +27,15 @@ namespace ClassicUO.Renderer
 
         public int TexturesCount => _textureList.Count;
 
+        /// <summary>
+        /// Lean mode (environment NAVREY_LEAN=1, for headless agents that never draw): no atlas pages are allocated. Every sprite gets one shared 1x1
+        /// texture and keeps its full rectangle, so sizes and bounds still read right; only the pixels on the GPU are skipped. Each 4096x4096 page costs
+        /// 64 MB, and a headless bot client allocated several.
+        /// </summary>
+        public static readonly bool Lean = Environment.GetEnvironmentVariable("NAVREY_LEAN") == "1";
+
+        private static Texture2D _leanTexture;
+
         public unsafe Texture2D AddSprite(
             ReadOnlySpan<uint> pixels,
             int width,
@@ -34,6 +43,12 @@ namespace ClassicUO.Renderer
             out Rectangle pr
         )
         {
+            if (Lean)
+            {
+                pr = new Rectangle(0, 0, width, height);
+                return _leanTexture ??= new Texture2D(_device, 1, 1, false, _format);
+            }
+
             var index = _textureList.Count - 1;
 
             if (index < 0)

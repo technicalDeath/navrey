@@ -340,7 +340,7 @@ root `README.md` is written for players, not developers, and carries none of the
 
 **Keep changes inside `Agent/`.** ClassicUO proper is touched in seven places only (`Main.cs`,
 `GameController.cs`, `Client.cs`, `CUOEnviroment.cs`, one accessor in `PacketHandlers.cs`, the
-`poi_directory` property and the no-op `Save()` in `Configuration/Settings.cs`, one csproj entry). Nothing in ClassicUO references `Agent.Capabilities`. New agent features should add
+`poi_directory` property and the no-op `Save()` in `Configuration/Settings.cs`, one csproj entry), plus one memory switch: `ClassicUO.Renderer/TextureAtlas.cs` allocates no atlas pages when `NAVREY_LEAN=1` (headless bot farms; every sprite shares a 1x1 texture and keeps its full rectangle; about 300 MB less private memory per client with `FNA3D_FORCE_DRIVER=D3D11`). Nothing in ClassicUO references `Agent.Capabilities`. New agent features should add
 zero engine touchpoints — `AgentHost.PumpGameThread()` is already called every frame, and
 `AgentSettings.ApplyDotEnv` already pre-scans argv, so a new per-frame feature or flag needs
 neither a new hook nor a `CUOEnviroment` field.
