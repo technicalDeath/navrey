@@ -480,15 +480,30 @@ namespace ClassicUO.Agent.Capabilities
         /// (see the pacing note on <see cref="TakeStep"/>). Returns false only if the budget below
         /// is spent with no request ever accepted.
         /// </summary>
+        /// <summary>
+        /// When a walk runs: "always" (the default, NAVREY_RUN unset), "never", or "auto" - run while
+        /// stamina is at least half, walk below that. Running costs stamina every few steps and walking
+        /// costs none, so a bot that always runs arrives from a long walk out of breath and has to stand
+        /// and rest; "auto" walks the rest of the way, as a player does. The `runmode` command sets it.
+        /// </summary>
+        public static string RunMode = (Environment.GetEnvironmentVariable("NAVREY_RUN") ?? "always").Trim().ToLowerInvariant();
+
+        private static bool ShouldRun(World world) => RunMode switch
+        {
+            "never" => false,
+            "auto"  => world.Player.StaminaMax == 0 || world.Player.Stamina * 2 >= world.Player.StaminaMax,
+            _       => true
+        };
+
         private static bool SendWalk(CommandContext ctx, Direction direction)
         {
             const int THROTTLE_RETRY_MS = 15;
 
             for (int waited = 0; waited < THROTTLE_BUDGET_MS; waited += THROTTLE_RETRY_MS)
             {
-                // Run rather than walk - half the time per tile. The client itself drops back to
-                // walking when stamina runs out, so asking to run is always safe.
-                if (ctx.Game(w => w.Player.Walk(direction, true)))
+                // Running is half the time per tile, and the client drops back to walking when stamina
+                // runs out, so asking to run is always safe; RunMode decides when it is also wise.
+                if (ctx.Game(w => w.Player.Walk(direction, ShouldRun(w))))
                 {
                     return true;
                 }

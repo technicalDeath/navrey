@@ -461,6 +461,24 @@ namespace ClassicUO.Agent
                 }
             }, "statefile");
 
+            Register("runmode", "runmode [always|auto|never]", "When goto runs: always, never, or auto (only while stamina is at least half)", ctx =>
+            {
+                string mode = (ctx.Arg(0) ?? "").Trim().ToLowerInvariant();
+
+                if (mode is "always" or "auto" or "never")
+                {
+                    Capabilities.Navigation.RunMode = mode;
+                }
+                else if (mode.Length > 0)
+                {
+                    ctx.Warn("usage: runmode [always|auto|never]");
+
+                    return;
+                }
+
+                ctx.Print($"run mode: {Capabilities.Navigation.RunMode}");
+            });
+
             Register("walk", "walk <n|s|e|w|ne|nw|se|sw> [run]", "Walk one tile", ctx =>
             {
                 if (!ctx.RequireInGame())
