@@ -25,6 +25,31 @@ namespace ClassicUO.IO
             _hasExtra = hasextra;
         }
 
+        /// <summary>
+        /// Read by hash only (<see cref="TryGetUOPData"/>), never by index: <see cref="FillEntries"/> then skips the
+        /// index table, which for a file such as AnimationFrameN.uop is 81,919 empty entries (about 3 MB) per file.
+        /// </summary>
+        public bool HashesOnly { get; init; }
+
+        /// <summary>
+        /// Drops the empty tail of the index table. The table is padded to at least 0x13FFF entries for the loaders
+        /// that remap ids into it; a map file holds about a hundred and reads it only within bounds.
+        /// </summary>
+        public void TrimEntries()
+        {
+            int last = Entries.Length - 1;
+
+            while (last >= 0 && Entries[last].Offset == 0 && Entries[last].Length == 0)
+            {
+                last--;
+            }
+
+            if (last + 1 < Entries.Length)
+            {
+                Array.Resize(ref Entries, last + 1);
+            }
+        }
+
         public string Pattern => _pattern;
 
 
@@ -138,6 +163,13 @@ namespace ClassicUO.IO
                 Seek(nextBlock, System.IO.SeekOrigin.Begin);
             } while (nextBlock != 0);
 
+            if (HashesOnly)
+            {
+                Entries = Array.Empty<UOFileIndex>();
+
+                return;
+            }
+
             Entries = new UOFileIndex[Math.Max(total, ushort.MaxValue) + 0x4000];
 
             for (int i = 0; i < Entries.Length; i++)
@@ -150,6 +182,10 @@ namespace ClassicUO.IO
                     Entries[i] = e;
                 }
             }
+
+            // a file read by index never asks for a hash again (only the HashesOnly animation files do): the copy is 9 MB across the client's files
+            _hashes.Clear();
+            _hashes.TrimExcess();
         }
 
         public static ulong CreateHash(string s)

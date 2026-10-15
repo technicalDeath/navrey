@@ -224,7 +224,7 @@ namespace ClassicUO.Game.Map
             int block = GetBlock(blockX, blockY);
             int map = Index;
             Client.Game.UO.FileManager.Maps.SanitizeMapIndex(ref map);
-            IndexMap[] list = Client.Game.UO.FileManager.Maps.BlockData[map];
+            var list = Client.Game.UO.FileManager.Maps.BlockData[map];
 
             return ref block >= list.Length ? ref IndexMap.Invalid : ref list[block];
         }

@@ -382,6 +382,27 @@ namespace ClassicUO.Agent
                 }));
             }, "position");
 
+            Register("meminfo", "meminfo", "Where this client's memory goes: managed heap, GC-committed, private bytes, working set", ctx =>
+            {
+                var gc = System.GC.GetGCMemoryInfo();
+                using var proc = System.Diagnostics.Process.GetCurrentProcess();
+                long mb(long b) => b / (1024 * 1024);
+                ctx.Print($"managed heap {mb(gc.HeapSizeBytes)} MB, GC committed {mb(gc.TotalCommittedBytes)} MB, fragmented {mb(gc.FragmentedBytes)} MB, " +
+                          $"private bytes {mb(proc.PrivateMemorySize64)} MB, working set {mb(proc.WorkingSet64)} MB, " +
+                          $"native (private minus GC committed) about {mb(proc.PrivateMemorySize64 - gc.TotalCommittedBytes)} MB");
+            });
+
+            Register("memcensus", "memcensus [top] [max_objects]", "Rough census of the managed heap by reflection: bytes per static root and per type (slow; diagnostics)", ctx =>
+            {
+                int top = int.TryParse(ctx.Arg(0), out var t) ? t : 25;
+                long max = long.TryParse(ctx.Arg(1), out var m) ? m : 30_000_000;
+
+                foreach (var line in MemCensus.Run(top, max))
+                {
+                    ctx.Print(line);
+                }
+            });
+
             Register("status", "status", "HP, mana, stamina, stats and gold", ctx =>
             {
                 if (!ctx.RequireInGame())

@@ -74,7 +74,8 @@ namespace ClassicUO.Assets
 
                     if (File.Exists(pathuop))
                     {
-                        _filesUop[i] = new UOFileUop(pathuop, "build/animationlegacyframe/{0:D6}/{0:D2}.bin");
+                        // looked up by hash only (body and action in the name), so no index table
+                        _filesUop[i] = new UOFileUop(pathuop, "build/animationlegacyframe/{0:D6}/{0:D2}.bin") { HashesOnly = true };
                         _filesUop[i].FillEntries();
                         loaduop = true;
                     }

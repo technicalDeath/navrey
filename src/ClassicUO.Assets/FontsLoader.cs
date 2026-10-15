@@ -71,7 +71,8 @@ namespace ClassicUO.Assets
         private HtmlStatus _htmlStatus;
 
         private FontCharacterData[,] _fontDataASCII;
-        private FontCharacterDataUnicode[,] _fontDataUNICODE;
+        // font -> page (char >> 8) -> char, pages made as characters are first used: the dense [font, 0x10000] table was about 20 MB, almost all empty
+        private FontCharacterDataUnicode[][][] _fontDataUNICODE;
         private readonly UOFile[] _unicodeFontAddress = new UOFile[20];
         private readonly long[] _unicodeFontSize = new long[20];
         private readonly VisitedUrlCache _visitedUrls = new VisitedUrlCache(1024);
@@ -206,7 +207,15 @@ namespace ClassicUO.Assets
                 _unicodeFontSize[1] = _unicodeFontSize[0];
             }
 
-            _fontDataUNICODE = new FontCharacterDataUnicode[_unicodeFontAddress.Length, 0x10000];
+            _fontDataUNICODE = new FontCharacterDataUnicode[_unicodeFontAddress.Length][][];
+        }
+
+        private ref FontCharacterDataUnicode CharSlot(byte font, int index)
+        {
+            var pages = _fontDataUNICODE[font] ??= new FontCharacterDataUnicode[0x100][];
+            var page = pages[index >> 8] ??= new FontCharacterDataUnicode[0x100];
+
+            return ref page[index & 0xFF];
         }
 
         private static FontCharacterDataUnicode _nullChar = new FontCharacterDataUnicode();
@@ -220,7 +229,7 @@ namespace ClassicUO.Assets
                 return ref _nullChar;
             }
 
-            ref var cc = ref _fontDataUNICODE[font, index];
+            ref var cc = ref CharSlot(font, index);
 
             if (cc.Data == null)
             {
@@ -253,7 +262,7 @@ namespace ClassicUO.Assets
 
             file.Seek(lookup, SeekOrigin.Begin);
 
-            ref var cc = ref _fontDataUNICODE[font, index];
+            ref var cc = ref CharSlot(font, index);
 
             cc.OffsetX = file.ReadInt8();
             cc.OffsetY = file.ReadInt8();

@@ -14,7 +14,14 @@ namespace ClassicUO.Assets
     {
         private const string MISSING_CLILOC_TEXT = "MegaCliloc: missing {0} [~1_val~] [~2_val~]";
         private string _cliloc;
-        private readonly Dictionary<int, string> _entries = new Dictionary<int, string>();
+
+        // Each file's decompressed bytes, and every entry's place in them (sorted by number): an entry's text is decoded the first time it is
+        // asked for. Holding all of them as strings was about 15 MB per client, nearly all of it never shown.
+        private readonly List<byte[]> _data = new List<byte[]>();
+        private int[] _numbers = Array.Empty<int>();
+        private long[] _places = Array.Empty<long>();      // file << 56 | offset << 16 | length
+        private readonly Dictionary<int, string> _entries = new Dictionary<int, string>();   // decoded so far
+        private readonly object _lock = new object();
 
         public ClilocLoader(UOFileManager fileManager) : base(fileManager)
         {
@@ -55,16 +62,28 @@ namespace ClassicUO.Assets
                 return;
             }
 
+            var places = new Dictionary<int, long>();
+
             if (string.Compare(_cliloc, "cliloc.enu", StringComparison.InvariantCultureIgnoreCase) != 0)
             {
                 string enupath = FileManager.GetUOFilePath("Cliloc.enu");
-                ReadCliloc(enupath);
+                ReadCliloc(enupath, places);
             }
 
-            ReadCliloc(path);
+            ReadCliloc(path, places);
+
+            lock (_lock)
+            {
+                _numbers = new int[places.Count];
+                _places = new long[places.Count];
+                places.Keys.CopyTo(_numbers, 0);
+                places.Values.CopyTo(_places, 0);
+                Array.Sort(_numbers, _places);
+                _entries.Clear();
+            }
         }
 
-        void ReadCliloc(string path)
+        void ReadCliloc(string path, Dictionary<int, long> places)
         {
             using var fileStream = new FileStream(path, FileMode.Open, FileAccess.Read);
 
@@ -76,6 +95,9 @@ namespace ClassicUO.Assets
 
             var output = buf[3] == 0x8E /*|| FileManager.Version >= ClientVersion.CV_7010400*/ ? BwtDecompress.Decompress(buf) : buf;
 
+            long file = _data.Count;
+            _data.Add(output);
+
             var reader = new StackDataReader(output);
             reader.ReadInt32LE();
             reader.ReadInt16LE();
@@ -84,22 +106,50 @@ namespace ClassicUO.Assets
             {
                 var number = reader.ReadInt32LE();
                 var flag = reader.ReadUInt8();
-                var length = reader.ReadInt16LE();
-                var text = string.Intern(reader.ReadUTF8(length));
-
-                _entries[number] = text;
+                var length = Math.Min((int)(ushort)reader.ReadInt16LE(), reader.Remaining);
+                places[number] = (file << 56) | ((long)reader.Position << 16) | (long)length;
+                reader.Skip(length);
             }
         }
 
         public override void ClearResources()
         {
-            _entries.Clear();
+            lock (_lock)
+            {
+                _entries.Clear();
+            }
+        }
+
+        private bool TryGet(int clilocNum, out string text)
+        {
+            lock (_lock)
+            {
+                if (_entries.TryGetValue(clilocNum, out text))
+                {
+                    return true;
+                }
+
+                int i = Array.BinarySearch(_numbers, clilocNum);
+
+                if (i < 0)
+                {
+                    return false;
+                }
+
+                long place = _places[i];
+                var span = new ReadOnlySpan<byte>(_data[(int)(place >> 56)], (int)((place >> 16) & 0xFF_FFFF_FFFF), (int)(place & 0xFFFF));
+                int zero = span.IndexOf((byte)0);     // the text ends at a zero byte, as StackDataReader.ReadUTF8 reads it
+                text = System.Text.Encoding.UTF8.GetString(zero < 0 ? span : span.Slice(0, zero));
+                _entries[clilocNum] = text;
+
+                return true;
+            }
         }
 
         [return: NotNull]
         public string GetString(int clilocNum, string fallback = null)
         {
-            _entries.TryGetValue(clilocNum, out string text);
+            TryGet(clilocNum, out string text);
 
             return text ?? fallback ?? string.Format(MISSING_CLILOC_TEXT, clilocNum);
         }
@@ -254,7 +304,7 @@ namespace ClassicUO.Assets
                         }
                         else if (has_arguments && int.TryParse(a.ToString(), out int clil))
                         {
-                            if (_entries.TryGetValue(clil, out string value) && !string.IsNullOrEmpty(value))
+                            if (TryGet(clil, out string value) && !string.IsNullOrEmpty(value))
                             {
                                 a = value.AsSpan();
                             }

@@ -28,7 +28,7 @@ namespace ClassicUO.Assets
 
         public string MapsLayouts { get; set; }
 
-        public IndexMap[][] BlockData { get; private set; }
+        public IndexMapTable[] BlockData { get; private set; }
 
         public int[,] MapBlocksSize { get; private set; }
 
@@ -90,7 +90,7 @@ namespace ClassicUO.Assets
             StaticPatchCount = new int[MAPS_COUNT];
             MapBlocksSize = new int[MAPS_COUNT, 2];
 
-            BlockData = new IndexMap[MAPS_COUNT][];
+            BlockData = new IndexMapTable[MAPS_COUNT];
 
             _mapDif = new UOFileMul[MAPS_COUNT];
             _mapDifl = new UOFileMul[MAPS_COUNT];
@@ -148,6 +148,7 @@ namespace ClassicUO.Assets
                 {
                     var uopFile = new UOFileUop(path, $"build/map{i}legacymul/{{0:D8}}.dat");
                     uopFile.FillEntries();
+                    uopFile.TrimEntries();      // ~100 entries; the padding to 0x13FFF is about 3 MB per map file
 
                     _filesMap[i] = uopFile;
 
@@ -156,6 +157,7 @@ namespace ClassicUO.Assets
                     {
                         var uopFileX = new UOFileUop(path, $"build/map{i}legacymul/{{0:D8}}.dat");
                         uopFileX.FillEntries();
+                        uopFileX.TrimEntries();
                         _filesMapX[i] = uopFileX;
                     }
 
@@ -306,13 +308,9 @@ namespace ClassicUO.Assets
             MapBlocksSize[i, 0] = MapsDefaultSize[i, 0] >> 3;
             MapBlocksSize[i, 1] = MapsDefaultSize[i, 1] >> 3;
 
-            var mapblocksize = sizeof(MapBlock);
-            var staticidxblocksize = sizeof(StaidxBlock);
-            var staticblocksize = sizeof(StaticsBlock);
             var width = MapBlocksSize[i, 0];
             var height = MapBlocksSize[i, 1];
             var maxblockcount = width * height;
-            BlockData[i] = new IndexMap[maxblockcount];
             var file = _currentMapFiles[i];
             var fileidx = _currentIdxStaticsFiles[i];
             var staticfile = _currentStaticsFiles[i];
@@ -327,15 +325,25 @@ namespace ClassicUO.Assets
                 staticfile = _currentStaticsFiles[0];
             }
 
+            // built a page of 4,096 blocks at a time as the map is first read there (IndexMapTable), not the whole facet up front
+            BlockData[i] = new IndexMapTable(maxblockcount, (first, page) => FillIndexPage(first, page, maxblockcount, file, fileidx, staticfile));
+        }
+
+        private static unsafe void FillIndexPage(int first, IndexMap[] page, int maxblockcount, FileReader file, FileReader fileidx, FileReader staticfile)
+        {
+            var mapblocksize = sizeof(MapBlock);
+            var staticidxblocksize = sizeof(StaidxBlock);
+            var staticblocksize = sizeof(StaticsBlock);
             ulong uopoffset = 0;
             int fileNumber = -1;
-            bool isuop = file is UOFileUop;
+            var uop = file as UOFileUop;
 
-            for (int block = 0; block < maxblockcount; block++)
+            for (int k = 0; k < page.Length && first + k < maxblockcount; k++)
             {
+                int block = first + k;
                 int blocknum = block;
 
-                if (isuop)
+                if (uop != null)
                 {
                     blocknum &= 4095;
                     int shifted = block >> 12;
@@ -343,7 +351,6 @@ namespace ClassicUO.Assets
                     if (fileNumber != shifted)
                     {
                         fileNumber = shifted;
-                        var uop = file as UOFileUop;
 
                         if (shifted < uop.Entries.Length)
                         {
@@ -366,7 +373,7 @@ namespace ClassicUO.Assets
                     staticCount = Math.Min(1024, (uint)(st.Size / staticblocksize));
                 }
 
-                ref var data = ref BlockData[i][block];
+                ref var data = ref page[k];
                 data.MapAddress = mapPos;
                 data.StaticAddress = staticPos;
                 data.StaticCount = staticCount;
@@ -376,12 +383,6 @@ namespace ClassicUO.Assets
 
                 data.MapFile = file;
                 data.StaticFile = staticfile;
-            }
-
-            if (isuop)
-            {
-                // TODO: UOLive needs hashes! we need to find out a better solution, but keep 'em for the moment
-                //((UOFileUop)file)?.ClearHashes();
             }
         }
 
@@ -558,7 +559,7 @@ namespace ClassicUO.Assets
         {
             for (int i = 0; i < MAPS_COUNT; i++)
             {
-                IndexMap[] list = BlockData[i];
+                var list = BlockData[i];
 
                 if (list == null)
                 {
@@ -687,5 +688,60 @@ namespace ClassicUO.Assets
         public static IndexMap Invalid = new IndexMap() { MapAddress = ulong.MaxValue };
 
         public readonly bool IsValid() => MapAddress != ulong.MaxValue;
+    }
+
+    /// <summary>
+    /// One map's block index, built a page of 4,096 blocks at a time when a block in it is first read. A whole facet is about 460,000
+    /// blocks of 56 bytes (26 MB per client), and a character only reads the pages around where it is.
+    /// </summary>
+    public sealed class IndexMapTable
+    {
+        private const int PAGE_SHIFT = 12;
+        private const int PAGE_SIZE = 1 << PAGE_SHIFT;
+
+        // one lock for every table: map 1 can share map 0's statics index file, and a page fill seeks it
+        private static readonly object _fillLock = new object();
+
+        private readonly IndexMap[][] _pages;
+        private readonly Action<int, IndexMap[]> _fill;
+
+        public IndexMapTable(int length, Action<int, IndexMap[]> fill)
+        {
+            Length = length;
+            _pages = new IndexMap[(length + PAGE_SIZE - 1) >> PAGE_SHIFT][];
+            _fill = fill;
+        }
+
+        public int Length { get; }
+
+        public ref IndexMap this[int block] => ref Page(block >> PAGE_SHIFT)[block & (PAGE_SIZE - 1)];
+
+        public ref IndexMap this[long block] => ref this[(int)block];
+
+        public ref IndexMap this[ulong block] => ref this[(int)block];
+
+        private IndexMap[] Page(int p)
+        {
+            var page = System.Threading.Volatile.Read(ref _pages[p]);
+
+            if (page != null)
+            {
+                return page;
+            }
+
+            lock (_fillLock)
+            {
+                page = _pages[p];
+
+                if (page == null)
+                {
+                    page = new IndexMap[PAGE_SIZE];
+                    _fill(p << PAGE_SHIFT, page);
+                    System.Threading.Volatile.Write(ref _pages[p], page);
+                }
+            }
+
+            return page;
+        }
     }
 }
